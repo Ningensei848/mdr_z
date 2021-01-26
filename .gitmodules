@@ -1,6 +1,6 @@
 [submodule "Ura/sparqlist"]
 	path = Ura/sparqlist
-	url = github_Ningensei848:Ningensei848/sparqlist.git
+	url = https://github.com/Ningensei848/sparqlist.git
 [submodule "Omote/metastanza"]
 	path = Omote/metastanza
-	url = github_Ningensei848:Ningensei848/metastanza.git
+	url = https://github.com/Ningensei848/metastanza
