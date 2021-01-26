@@ -1,0 +1,219 @@
+# Compose file version 3 reference | Docker Documentation
+# cf. https://docs.docker.com/compose/compose-file/compose-file-v3/
+version: "3.9"
+
+# --------------------------------------------------------------------------------------------------
+networks:
+  traefik_proxy:
+    external:
+      name: traefik_proxy
+  postgres:
+    external:
+      name: postgres
+  default:
+    driver: bridge
+# --------------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+# TODO: add healthcheck, logging, deploy.restart_policy
+# cf. https://docs.docker.com/compose/compose-file/compose-file-v3/#healthcheck
+# cf. https://docs.docker.com/compose/compose-file/compose-file-v3/#logging
+# cf. https://docs.docker.com/compose/compose-file/compose-file-v3/#restart_policy
+
+services:
+  # --------------------------------------------------------------------------------------------------
+  # Traefik is an open-source Edge Router that makes publishing your services a fun and easy experience.
+  # cf. https://doc.traefik.io/traefik/
+  reverse-proxy:
+    container_name: reverse-proxy
+    image: traefik:v2.4
+    ports:
+      # The HTTP port
+      - ${PORT_TRAEFIK_LISTENING}:${PORT_TRAEFIK_HTTP}
+    networks:
+      - traefik_proxy
+    volumes:
+      # So that Traefik can listen to the Docker events cf. https://doc.traefik.io/traefik/providers/docker/#endpoint
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Sync config file from Host to container
+      - ${PWD}/traefik/traefik.toml:/etc/traefik/traefik.toml
+      # Logs you specified on `traefik.toml`
+      - logfiles:/var/log/traefik
+    labels:
+      - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${HOSTNAME}`)"
+      - "traefik.http.routers.traefik.service=api@internal" # `api@internal` does not need to sepecify its port
+      - "traefik.tcp.routers.traefik.rule=HostSNI(`traefik.${HOSTNAME}`)"
+      - "traefik.tcp.routers.traefik.service=traefikAPI"
+      # Tell Traefik to use `port` to connect to the container
+      - "traefik.tcp.services.traefikAPI.loadbalancer.server.port=${PORT_TRAEFIK_DASHBOARD}" # this port is exposed by container
+  # --------------------------------------------------------------------------------------------------
+  # OpenLink Virtuoso is the first CROSS PLATFORM Universal Server to implement Web, File,
+  # and Database server functionality alongside Native XML Storage,
+  # and Universal Data Access Middleware, as a single server solution.
+  # cf. https://hub.docker.com/r/openlink/virtuoso-opensource-7 , http://docs.openlinksw.com/virtuoso
+  virtuoso:
+    container_name: virtuoso
+    image: openlink/virtuoso-opensource-7
+    # build:
+    #   context: ${PWD}/Ura/virtuoso
+    #   dockerfile: Dockerfile.virtuoso
+    depends_on:
+      - reverse-proxy
+    environment:
+      DBA_PASSWORD: mysecret
+    networks:
+      - traefik_proxy
+    volumes:
+      - rdfdata:/database
+    labels:
+      - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.services.virtuoso.loadbalancer.server.port=${PORT_VIRTUOSO}"
+      - "traefik.http.routers.virtuoso.rule=Host(`virtuoso.${HOSTNAME}`)"
+  # --------------------------------------------------------------------------------------------------
+  # PostgreSQL: The world's most advanced open source database
+  # cf. https://hub.docker.com/_/postgres
+  database:
+    container_name: database
+    build:
+      context: ${PWD}/Ura/database
+      dockerfile: Dockerfile.database
+    restart: always
+    networks:
+      - postgres
+    environment:
+      - POSTGRES_DB
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      # Valid format: postgres://user:password@host:port/db?sslmode=mode (↓ `database` is service name on docker)
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database/${POSTGRES_DB}?sslmode=disable
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+  # --------------------------------------------------------------------------------------------------
+  # Pgweb - Cross-platform client for PostgreSQL databases
+  # cf. http://sosedoff.github.io/pgweb/
+  pgweb:
+    container_name: pgweb
+    image: sosedoff/pgweb
+    depends_on:
+      - database
+      - reverse-proxy
+    restart: always
+    # CLI reference: cf. https://github.com/sosedoff/pgweb/wiki/Usage
+    command: ["/usr/bin/pgweb", "--bind=0.0.0.0", "--listen=${PORT_PGWEB}"]
+    networks:
+      - traefik_proxy
+      - postgres
+    environment:
+      # Valid format: postgres://user:password@host:port/db?sslmode=mode (↓ `database` is service name on docker)
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database/${POSTGRES_DB}?sslmode=disable
+    labels:
+      - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.services.pgweb.loadbalancer.server.port=${PORT_PGWEB}"
+      - "traefik.http.routers.pgweb.rule=Host(`pgweb.${HOSTNAME}`)"
+  # --------------------------------------------------------------------------------------------------
+  # SPARQList is a REST API server which executes a SPARQL query,
+  # transform the result into formatted data if defined, and then send it back to a web client application.
+  # cf. https://github.com/dbcls/sparqlist , https://sparql-support.dbcls.jp/rest/
+  sparqlist:
+    container_name: sparqlist
+    build:
+      context: ${PWD}/Ura/sparqlist
+      dockerfile: Dockerfile.sparqlist
+    networks:
+      - traefik_proxy
+    environment:
+      - PORT=${PORT_SPARQLIST}
+    volumes:
+      - sparqlets:/app/repository
+    labels:
+      - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.services.sparqlist.loadbalancer.server.port=${PORT_SPARQLIST}"
+      - "traefik.http.routers.sparqlist.rule=Host(`sparqlist.${HOSTNAME}`)"
+  # --------------------------------------------------------------------------------------------------
+  # Docusaurus · Easy to Maintain Open Source Documentation Websites
+  # cf. https://docusaurus.io
+  docusaurus:
+    container_name: docusaurus
+    build:
+      context: ${PWD}/Omote/docusaurus
+      dockerfile: Dockerfile.docusaurus
+    depends_on:
+      - reverse-proxy
+    command:
+      ["yarn", "start", "--host", "0.0.0.0", "--port", "${PORT_DOCUSAURUS}"]
+    networks:
+      - traefik_proxy
+    volumes:
+      - documents:/app
+      - node_modules_docusaurus:/app/website/node_modules
+    labels:
+      - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.services.docusaurus.loadbalancer.server.port=${PORT_DOCUSAURUS}"
+      - "traefik.http.routers.docusaurus.rule=Host(`docusaurus.${HOSTNAME}`)"
+
+  # --------------------------------------------------------------------------------------------------
+  # Metastanza: This was generated by TogoStanza, which enables the development of
+  # reusable web components that are embeddable into any web pages.
+  # cf. https://github.com/togostanza/metastanza, https://togostanza.github.io/metastanza/
+  metastanza:
+    container_name: metastanza
+    # image: nginx:latest
+    build:
+      context: ${PWD}/Omote/metastanza
+      dockerfile: Dockerfile.metastanza
+    depends_on:
+      - reverse-proxy
+    networks:
+      - traefik_proxy
+    volumes:
+      - stanzas:/usr/share/nginx/html
+    labels:
+      - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.services.metastanza.loadbalancer.server.port=${PORT_METASTANZA}"
+      - "traefik.http.routers.metastanza.rule=Host(`metastanza.${HOSTNAME}`)"
+# --------------------------------------------------------------------------------------------------
+# cf. https://bit.ly/3o8k6Y5 --> but this solution needs `driver: local` or somthing driver.
+volumes:
+  dbdata:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_DATABASE}
+      o: bind
+  rdfdata:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_RDF}
+      o: bind
+  documents:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_DOCUSAURUS}
+      o: bind
+  sparqlets:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_SPARQLIST_REPOSITORY}
+      o: bind
+  stanzas:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_METASTANZA}
+      o: bind
+  logfiles:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_LOG}
+      o: bind
+  node_modules_docusaurus:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_NODE_MODULES_DOCUSAURUS}
+      o: bind
+# --------------------------------------------------------------------------------------------------

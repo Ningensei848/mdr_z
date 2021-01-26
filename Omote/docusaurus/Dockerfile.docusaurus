@@ -1,0 +1,12 @@
+FROM node:lts
+
+RUN apt-get update -qq && \
+    apt-get install -y build-essential locales && \
+    echo "ja_JP UTF-8" > /etc/locale.gen && \
+    locale-gen
+
+WORKDIR /app/website
+COPY ./website/package.json package.json
+
+RUN yarn install
+
