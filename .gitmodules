@@ -1,6 +1,8 @@
 [submodule "Ura/sparqlist"]
 	path = Ura/sparqlist
 	url = https://github.com/Ningensei848/sparqlist.git
+	ignore = dirty
 [submodule "Omote/metastanza"]
 	path = Omote/metastanza
 	url = https://github.com/Ningensei848/metastanza.git
+	ignore = dirty

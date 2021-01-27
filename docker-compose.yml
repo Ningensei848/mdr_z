@@ -125,6 +125,7 @@ services:
       - PORT=${PORT_SPARQLIST}
     volumes:
       - sparqlets:/app/repository
+      - node_modules_sparqlist:/app/node_modules
     labels:
       - "traefik.enable=true" # due to `exposedByDefault=false`
       - "traefik.http.services.sparqlist.loadbalancer.server.port=${PORT_SPARQLIST}"
@@ -215,5 +216,11 @@ volumes:
     driver_opts:
       type: none
       device: ${PATH_TO_NODE_MODULES_DOCUSAURUS}
+      o: bind
+  node_modules_sparqlist:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_NODE_MODULES_SPARQLIST}
       o: bind
 # --------------------------------------------------------------------------------------------------
