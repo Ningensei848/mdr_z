@@ -6,8 +6,14 @@ exposedByDefault = false
 insecureSkipVerify = true
 
 [entryPoints]
-[entryPoints.http]
-address = ":80"
+[entryPoints.web]
+address = ":7890"
+
+# trustedIPs = ["127.0.0.1", "192.168.0.1"]
+# [entryPoints.http.proxyProtocol]
+# insecure = true
+# trustedIPs = ["127.0.0.1", "192.168.0.1"]
+
 [entryPoints.traefik]
 address = ":9090"
 

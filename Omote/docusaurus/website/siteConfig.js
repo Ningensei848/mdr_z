@@ -24,7 +24,7 @@ const siteConfig = {
   title: 'Test Site', // Title for your website.
   tagline: 'A website for testing',
   url: 'https://your-docusaurus-test-site.com', // Your website URL
-  baseUrl: '/', // Base URL for your project */
+  baseUrl: '/docs/', // Base URL for your project */
   // For github.io type URLs, you would set the url and baseUrl like:
   //   url: 'https://facebook.github.io',
   //   baseUrl: '/test-site/',
@@ -54,8 +54,8 @@ const siteConfig = {
 
   /* Colors for website */
   colors: {
-    primaryColor: '#671703',
-    secondaryColor: '#481002',
+    primaryColor: '#031e28',
+    secondaryColor: '#02151c',
   },
 
   /* Custom fonts for website */

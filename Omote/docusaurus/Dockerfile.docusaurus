@@ -1,12 +1,34 @@
-FROM node:lts
+FROM nginx:alpine
 
-RUN apt-get update -qq && \
-    apt-get install -y build-essential locales && \
-    echo "ja_JP UTF-8" > /etc/locale.gen && \
-    locale-gen
+ARG GLIBC_VERSION
+ENV VERSION ${GLIBC_VERSION:-2.32-r0}
 
-WORKDIR /app/website
-COPY ./website/package.json package.json
+ARG LOCALE_LIST
+ENV LOCALE ${LOCALE_LIST:-"en_US,ja_JP"}
 
-RUN yarn install
 
+# タイムゾーン情報： cf. https://megalodon.jp/2021-0129-2033-15/https://qiita.com:443/dtan4/items/8359e389b95cbc60952d
+RUN apk --no-cache add ca-certificates && \
+    apk --update add tzdata  && \
+    cp /usr/share/zoneinfo/Asia/Tokyo /etc/localtime && \
+    apk del tzdata && \
+    rm -rf /var/cache/apk/*
+
+# ロケール設定： cf. https://megalodon.jp/2021-0129-1955-54/https://ksby.hatenablog.com:443/entry/2020/12/28/180211
+RUN apk update && \
+    apk upgrade; \
+    wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub; \
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${VERSION}/glibc-${VERSION}.apk; \
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${VERSION}/glibc-bin-${VERSION}.apk; \
+    wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${VERSION}/glibc-i18n-${VERSION}.apk; \
+    apk add --no-cache --update \
+    glibc-${VERSION}.apk \
+    glibc-bin-${VERSION}.apk \
+    glibc-i18n-${VERSION}.apk; \
+    rm glibc-${VERSION}.apk glibc-bin-${VERSION}.apk glibc-i18n-${VERSION}.apk
+
+# cf. https://github.com/gliderlabs/docker-alpine/issues/144#issuecomment-339906345
+RUN echo ${LOCALE} | tr ',' '\n' > /etc/locale.gen && \
+    cat /etc/locale.gen | xargs -i /usr/glibc-compat/bin/localedef -i {} -f UTF-8 {}.UTF-8
+
+ENV TZ Asia/Tokyo

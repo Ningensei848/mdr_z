@@ -28,7 +28,7 @@ services:
     image: traefik:v2.4
     ports:
       # The HTTP port
-      - ${PORT_TRAEFIK_LISTENING}:${PORT_TRAEFIK_HTTP}
+      - ${PORT_TRAEFIK_HTTP}:${PORT_TRAEFIK_HTTP}
     networks:
       - traefik_proxy
     volumes:
@@ -40,12 +40,17 @@ services:
       - logfiles:/var/log/traefik
     labels:
       - "traefik.enable=true" # due to `exposedByDefault=false`
-      - "traefik.http.routers.traefik.rule=Host(`traefik.${HOSTNAME}`)"
-      - "traefik.http.routers.traefik.service=api@internal" # `api@internal` does not need to sepecify its port
-      - "traefik.tcp.routers.traefik.rule=HostSNI(`traefik.${HOSTNAME}`)"
-      - "traefik.tcp.routers.traefik.service=traefikAPI"
-      # Tell Traefik to use `port` to connect to the container
-      - "traefik.tcp.services.traefikAPI.loadbalancer.server.port=${PORT_TRAEFIK_DASHBOARD}" # this port is exposed by container
+      - "traefik.http.routers.reverse-proxy.entrypoints=web"
+      # if you want to go `dashboard`, trailing slash is mandatory (i.e. http://example.domain/dashboard/  <= this slash)
+      - "traefik.http.routers.reverse-proxy.rule=(PathPrefix(`/api`) || PathPrefix(`/dashboard`)) || PathPrefix(`/debug`)"
+      - "traefik.http.routers.reverse-proxy.service=api@internal" # `api@internal` does not need to sepecify its port via `loadbalancer`
+      # global middlewares@docker
+      # strip-PathPrefix
+      - "traefik.http.middlewares.strip-PathPrefix.chain.middlewares=add-trailing-slash,remove-PathPrefix"
+      - "traefik.http.middlewares.add-trailing-slash.redirectregex.regex=^(https?://[^/]+/[a-z0-9_]+)$$"
+      - "traefik.http.middlewares.add-trailing-slash.redirectregex.replacement=$${1}/"
+      - "traefik.http.middlewares.add-trailing-slash.redirectregex.permanent=true"
+      - "traefik.http.middlewares.remove-PathPrefix.stripprefixregex.regex=/[a-z0-9_]+"
   # --------------------------------------------------------------------------------------------------
   # OpenLink Virtuoso is the first CROSS PLATFORM Universal Server to implement Web, File,
   # and Database server functionality alongside Native XML Storage,
@@ -59,16 +64,20 @@ services:
     #   dockerfile: Dockerfile.virtuoso
     depends_on:
       - reverse-proxy
-    environment:
-      DBA_PASSWORD: mysecret
     networks:
       - traefik_proxy
+    environment:
+      - DBA_PASSWORD=${VIRTUOSO_PASSWORD}
+      - VIRT_HTTPServer_ServerPort=8765
     volumes:
+      - ${PWD}/Ura/virtuoso/virtuoso_container.ini:${PATH_TO_VIRTUOSO_INI_FILE}
       - rdfdata:/database
     labels:
       - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.routers.virtuoso.entrypoints=web"
       - "traefik.http.services.virtuoso.loadbalancer.server.port=${PORT_VIRTUOSO}"
-      - "traefik.http.routers.virtuoso.rule=Host(`virtuoso.${HOSTNAME}`)"
+      - "traefik.http.routers.virtuoso.rule=PathPrefix(`${ROOT_PATH_VIRTUOSO}`)"
+      - "traefik.http.routers.virtuoso.middlewares=strip-PathPrefix@docker"
   # --------------------------------------------------------------------------------------------------
   # PostgreSQL: The world's most advanced open source database
   # cf. https://hub.docker.com/_/postgres
@@ -108,8 +117,11 @@ services:
       - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database/${POSTGRES_DB}?sslmode=disable
     labels:
       - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.routers.pgweb.entrypoints=web"
       - "traefik.http.services.pgweb.loadbalancer.server.port=${PORT_PGWEB}"
-      - "traefik.http.routers.pgweb.rule=Host(`pgweb.${HOSTNAME}`)"
+      - "traefik.http.routers.pgweb.rule=PathPrefix(`${ROOT_PATH_PGWEB}`)"
+      - "traefik.http.routers.pgweb.middlewares=strip-PathPrefix@docker"
+
   # --------------------------------------------------------------------------------------------------
   # SPARQList is a REST API server which executes a SPARQL query,
   # transform the result into formatted data if defined, and then send it back to a web client application.
@@ -119,38 +131,53 @@ services:
     build:
       context: ${PWD}/Ura/sparqlist
       dockerfile: Dockerfile.sparqlist
+      args:
+        - ROOT_PATH=${ROOT_PATH_SPARQLIST}
+    depends_on:
+      - reverse-proxy
     networks:
       - traefik_proxy
     environment:
       - PORT=${PORT_SPARQLIST}
+      - ROOT_PATH=${ROOT_PATH_SPARQLIST}
     volumes:
       - sparqlets:/app/repository
       - node_modules_sparqlist:/app/node_modules
     labels:
       - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.routers.sparqlist.entrypoints=web"
       - "traefik.http.services.sparqlist.loadbalancer.server.port=${PORT_SPARQLIST}"
-      - "traefik.http.routers.sparqlist.rule=Host(`sparqlist.${HOSTNAME}`)"
+      - "traefik.http.routers.sparqlist.rule=PathPrefix(`${ROOT_PATH_SPARQLIST}`)"
   # --------------------------------------------------------------------------------------------------
   # Docusaurus · Easy to Maintain Open Source Documentation Websites
   # cf. https://docusaurus.io
+  # dev: locally `yarn start` and write files (hot reload)
+  # prod: volume mount `build` dir and start Nginx (static)
   docusaurus:
+    # CAUTION!! 1. `baseUrl` in siteConfig.js, 2.`ROOT_PATH_DOCUSAURUS` and 3.stem of `DOCUSAURUS_DOCUMENT_ROOT` MUST all be identical
     container_name: docusaurus
     build:
       context: ${PWD}/Omote/docusaurus
       dockerfile: Dockerfile.docusaurus
+      args:
+        - GLIBC_VERSION=2.32-r0
+        - LOCALE_LIST=en_US,ja_JP
     depends_on:
       - reverse-proxy
-    command:
-      ["yarn", "start", "--host", "0.0.0.0", "--port", "${PORT_DOCUSAURUS}"]
     networks:
       - traefik_proxy
+    environment:
+      - DOCUSAURUS_DOCUMENT_ROOT=${DOCUSAURUS_DOCUMENT_ROOT}
     volumes:
-      - documents:/app
-      - node_modules_docusaurus:/app/website/node_modules
+      # Using environment variables in nginx configuration (new in 1.19) cf. https://hub.docker.com/_/nginx
+      - ${PWD}/Omote/docusaurus/default.conf.template:/etc/nginx/templates/default.conf.template
+      - documents:${DOCUSAURUS_DOCUMENT_ROOT}
     labels:
       - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.routers.docusaurus.entrypoints=web"
       - "traefik.http.services.docusaurus.loadbalancer.server.port=${PORT_DOCUSAURUS}"
-      - "traefik.http.routers.docusaurus.rule=Host(`docusaurus.${HOSTNAME}`)"
+      - "traefik.http.routers.docusaurus.rule=PathPrefix(`${ROOT_PATH_DOCUSAURUS}`)"
+      - "traefik.http.routers.docusaurus.middlewares=strip-PathPrefix@docker"
 
   # --------------------------------------------------------------------------------------------------
   # Metastanza: This was generated by TogoStanza, which enables the development of
@@ -162,16 +189,24 @@ services:
     build:
       context: ${PWD}/Omote/metastanza
       dockerfile: Dockerfile.metastanza
+      args:
+        - METASTANZA_DOCUMENT_ROOT=${METASTANZA_DOCUMENT_ROOT}
     depends_on:
       - reverse-proxy
     networks:
       - traefik_proxy
+    environment:
+      - METASTANZA_DOCUMENT_ROOT=${METASTANZA_DOCUMENT_ROOT}
     volumes:
-      - stanzas:/usr/share/nginx/html
+      # Using environment variables in nginx configuration (new in 1.19) cf. https://hub.docker.com/_/nginx
+      - ${PWD}/Omote/metastanza/default.conf.template:/etc/nginx/templates/default.conf.template
+      - stanzas:${METASTANZA_DOCUMENT_ROOT}
     labels:
       - "traefik.enable=true" # due to `exposedByDefault=false`
+      - "traefik.http.routers.metastanza.entrypoints=web"
       - "traefik.http.services.metastanza.loadbalancer.server.port=${PORT_METASTANZA}"
-      - "traefik.http.routers.metastanza.rule=Host(`metastanza.${HOSTNAME}`)"
+      - "traefik.http.routers.metastanza.rule=PathPrefix(`/metastanza`)"
+      - "traefik.http.routers.metastanza.middlewares=strip-PathPrefix@docker"
 # --------------------------------------------------------------------------------------------------
 # cf. https://bit.ly/3o8k6Y5 --> but this solution needs `driver: local` or somthing driver.
 volumes:
@@ -210,12 +245,6 @@ volumes:
     driver_opts:
       type: none
       device: ${PATH_TO_LOG}
-      o: bind
-  node_modules_docusaurus:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${PATH_TO_NODE_MODULES_DOCUSAURUS}
       o: bind
   node_modules_sparqlist:
     driver: local
