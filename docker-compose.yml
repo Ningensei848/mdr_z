@@ -55,7 +55,7 @@ services:
   # OpenLink Virtuoso is the first CROSS PLATFORM Universal Server to implement Web, File,
   # and Database server functionality alongside Native XML Storage,
   # and Universal Data Access Middleware, as a single server solution.
-  # cf. https://hub.docker.com/r/openlink/virtuoso-opensource-7 , http://docs.openlinksw.com/virtuoso
+  # cf. https://hub.docker.com/r/openlink/virtuoso-opensource-7 , http://docs.openlinksw.com/virtuoso, http://docs.openlinksw.com/virtuoso/dbadm/
   virtuoso:
     container_name: virtuoso
     image: openlink/virtuoso-opensource-7
@@ -68,16 +68,20 @@ services:
       - traefik_proxy
     environment:
       - DBA_PASSWORD=${VIRTUOSO_PASSWORD}
-      - VIRT_HTTPServer_ServerPort=8765
-    volumes:
-      - ${PWD}/Ura/virtuoso/virtuoso_container.ini:${PATH_TO_VIRTUOSO_INI_FILE}
-      - rdfdata:/database
+      # - VIRT_HTTPSERVER_ServerRoot=../vsp
+      - VIRT_HTTPSERVER_ServerPort=${PORT_VIRTUOSO}
+    # volumes:
+    # TODO: make app and APP_ROOT
+    # - ${PWD}/PATH/TO/APP_ROOT:/opt/virtuoso-opensource/vsp
     labels:
       - "traefik.enable=true" # due to `exposedByDefault=false`
       - "traefik.http.routers.virtuoso.entrypoints=web"
       - "traefik.http.services.virtuoso.loadbalancer.server.port=${PORT_VIRTUOSO}"
-      - "traefik.http.routers.virtuoso.rule=PathPrefix(`${ROOT_PATH_VIRTUOSO}`)"
-      - "traefik.http.routers.virtuoso.middlewares=strip-PathPrefix@docker"
+      # Because there is no function called `baseURL`, which replace stem of uri, static files cannot be read.
+      # Therefore, the "PathPrefix" function has been rejected and the "Host" function will be used.
+      # - "traefik.http.routers.virtuoso.rule=PathPrefix(`${ROOT_PATH_VIRTUOSO}`)"
+      # - "traefik.http.routers.virtuoso.middlewares=strip-PathPrefix@docker"
+      - "traefik.http.routers.virtuoso.rule=Host(`${HOSTNAME}`)"
   # --------------------------------------------------------------------------------------------------
   # PostgreSQL: The world's most advanced open source database
   # cf. https://hub.docker.com/_/postgres
@@ -216,6 +220,12 @@ volumes:
       type: none
       device: ${PATH_TO_DATABASE}
       o: bind
+  # static_virtuoso:
+  #   driver: local
+  #   driver_opts:
+  #     type: none
+  #     device: ${PATH_TO_STATIC_VIRTUOSO}
+  #     o: bind
   rdfdata:
     driver: local
     driver_opts:
