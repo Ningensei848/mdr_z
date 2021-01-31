@@ -1,5 +1,9 @@
 # Compose file version 3 reference | Docker Documentation
-# cf. https://docs.docker.com/compose/compose-file/compose-file-v3/
+# cf. https://docs.docker.com/compose/compose-file/compose-file-v3/,
+
+# docker-compose up | Docker Documentation
+# cf. https://docs.docker.com/compose/reference/up/
+
 version: "3.9"
 
 # --------------------------------------------------------------------------------------------------
@@ -81,7 +85,7 @@ services:
       # Therefore, the "PathPrefix" function has been rejected and the "Host" function will be used.
       # - "traefik.http.routers.virtuoso.rule=PathPrefix(`${ROOT_PATH_VIRTUOSO}`)"
       # - "traefik.http.routers.virtuoso.middlewares=strip-PathPrefix@docker"
-      - "traefik.http.routers.virtuoso.rule=Host(`${HOSTNAME}`)"
+      - "traefik.http.routers.virtuoso.rule=(PathPrefix(`/sparql/`) || PathPrefix(`/conductor`))"
   # --------------------------------------------------------------------------------------------------
   # PostgreSQL: The world's most advanced open source database
   # cf. https://hub.docker.com/_/postgres
@@ -107,10 +111,10 @@ services:
   pgweb:
     container_name: pgweb
     image: sosedoff/pgweb
+    restart: always
     depends_on:
       - database
       - reverse-proxy
-    restart: always
     # CLI reference: cf. https://github.com/sosedoff/pgweb/wiki/Usage
     command: ["/usr/bin/pgweb", "--bind=0.0.0.0", "--listen=${PORT_PGWEB}"]
     networks:
@@ -135,15 +139,12 @@ services:
     build:
       context: ${PWD}/Ura/sparqlist
       dockerfile: Dockerfile.sparqlist
-      args:
-        - ROOT_PATH=${ROOT_PATH_SPARQLIST}
     depends_on:
       - reverse-proxy
     networks:
       - traefik_proxy
     environment:
       - PORT=${PORT_SPARQLIST}
-      - ROOT_PATH=${ROOT_PATH_SPARQLIST}
     volumes:
       - sparqlets:/app/repository
       - node_modules_sparqlist:/app/node_modules
@@ -152,6 +153,7 @@ services:
       - "traefik.http.routers.sparqlist.entrypoints=web"
       - "traefik.http.services.sparqlist.loadbalancer.server.port=${PORT_SPARQLIST}"
       - "traefik.http.routers.sparqlist.rule=PathPrefix(`${ROOT_PATH_SPARQLIST}`)"
+      - "traefik.http.routers.sparqlist.middlewares=strip-PathPrefix@docker"
   # --------------------------------------------------------------------------------------------------
   # Docusaurus · Easy to Maintain Open Source Documentation Websites
   # cf. https://docusaurus.io
