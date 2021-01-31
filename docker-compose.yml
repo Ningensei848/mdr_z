@@ -216,29 +216,23 @@ services:
 # --------------------------------------------------------------------------------------------------
 # cf. https://bit.ly/3o8k6Y5 --> but this solution needs `driver: local` or somthing driver.
 volumes:
+  logfiles:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_LOG}
+      o: bind
   dbdata:
     driver: local
     driver_opts:
       type: none
       device: ${PATH_TO_DATABASE}
       o: bind
-  # static_virtuoso:
-  #   driver: local
-  #   driver_opts:
-  #     type: none
-  #     device: ${PATH_TO_STATIC_VIRTUOSO}
-  #     o: bind
   rdfdata:
     driver: local
     driver_opts:
       type: none
       device: ${PATH_TO_RDF}
-      o: bind
-  documents:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${PATH_TO_DOCUSAURUS}
       o: bind
   sparqlets:
     driver: local
@@ -246,22 +240,22 @@ volumes:
       type: none
       device: ${PATH_TO_SPARQLIST_REPOSITORY}
       o: bind
-  stanzas:
+  documents:
     driver: local
     driver_opts:
       type: none
-      device: ${PATH_TO_METASTANZA}
-      o: bind
-  logfiles:
-    driver: local
-    driver_opts:
-      type: none
-      device: ${PATH_TO_LOG}
+      device: ${PATH_TO_DOCUSAURUS}
       o: bind
   node_modules_sparqlist:
     driver: local
     driver_opts:
       type: none
       device: ${PATH_TO_NODE_MODULES_SPARQLIST}
+      o: bind
+  stanzas:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PATH_TO_METASTANZA}
       o: bind
 # --------------------------------------------------------------------------------------------------
